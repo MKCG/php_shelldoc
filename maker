@@ -1,0 +1,67 @@
+#!/usr/bin/php
+<?php
+
+require_once 'src/PhpDomParser.php';
+
+error_reporting(E_ALL ^ E_WARNING);
+$begin = microtime(true);
+
+foreach (['html', 'phpdoc'] as $dirname) {
+    if (!file_exists(__DIR__ . '/' . $dirname)) {
+        mkdir(__DIR__ . '/' . $dirname);
+    }
+}
+
+$parser = new \MKCG\Shelldoc\PhpDomParser();
+
+$functions = get_defined_functions()['internal'];
+sort($functions);
+
+$documentation = [];
+
+foreach ($functions as $function) {
+    echo "Documenting function : $function\n";
+
+    $response = loader($function, __DIR__ . '/html/');
+
+    if (!$response) {
+        continue;
+    }
+
+    $documentation[$function] = $parser->parseDocumentation($function, $response);
+}
+
+file_put_contents(__DIR__ . '/phpdoc/php.json', json_encode($documentation));
+
+echo "Done in " . round(microtime(true) - $begin, 3) . "s\n";
+
+function loader(string $function, string $path)
+{
+    $filepath = $path . $function . '.html';
+
+    if (file_exists($filepath)) {
+        return file_get_contents($filepath);
+    } else {
+        return downloader($function, $path);
+    }
+}
+
+function downloader(string $function, string $path) : ?string
+{
+    $url = 'http://www.php.net/manual/en/function.' . str_replace('_', '-', $function) . '.php';
+
+    $handler = curl_init($url);
+    curl_setopt($handler, CURLOPT_HEADER, 0);
+    curl_setopt($handler, CURLOPT_RETURNTRANSFER, 1);
+    $response = curl_exec($handler);
+    curl_close($handler);
+
+    if ($response) {
+        file_put_contents($path . $function . '.html', $response);
+        echo "SUCCESS - $function - $url\n";
+    } else {
+        echo "ERROR - $function - $url\n";
+    }
+
+    return is_string($response) ? $response : null;
+}

@@ -1,0 +1,252 @@
+#!/usr/bin/php
+<?php
+
+$parameters = array_slice($_SERVER['argv'], 1);
+$parameters = parseParameters($parameters);
+
+system('clear');
+
+if (array_key_exists('help', $parameters['options'])) {
+    promptHelp();
+    exit(0);
+}
+
+$docFilepath = __DIR__ . '/phpdoc/php.json';
+
+if (!file_exists($docFilepath)) {
+    echo sprintf(
+        "Documentation is missing, execute %s to make it\n",
+        __DIR__ . '/maker'
+    );
+    ask();
+    system('clear');
+    exit(0);
+}
+
+$documentation = json_decode(file_get_contents($docFilepath), JSON_OBJECT_AS_ARRAY);
+$functions = array_keys($documentation);
+
+
+while (true) {
+    system('clear');
+    $name = searchDocEntries($functions, $documentation);
+    promptDoc($documentation[$name]);
+
+    system('clear');
+    echo "Search another function ? Y/n\n";
+
+    $choice = ask();
+
+    if ($choice !== '' && $choice !== 'Y') {
+        quit();
+    }
+}
+
+function promptDoc(array $documentation)
+{
+    system('clear');
+
+    echo $documentation['name'] . "\n";
+
+    if (!empty($documentation['short'])) {
+        echo "\t" . $documentation['short'] . "\n";
+    }
+
+    if (!empty($documentation['parameters'])) {
+        echo "Parameters\n";
+        foreach ($documentation['parameters'] as $parameter) {
+            echo "\t";
+
+            if (!empty($parameter['type'])) {
+                echo $parameter['type'] . ' ';
+            }
+
+            echo $parameter['name'];
+
+            if (!empty($parameter['default_value'])) {
+                echo ' = ' . $parameter['default_value'];
+            }
+
+            echo "\n";
+
+            if (!empty($parameter['description'])) {
+                $description = formatText($parameter['description'], "\t\t");
+                echo $description . "\n";
+            }            
+
+            echo "\n";
+        }
+    }
+
+    if (!empty($documentation['return'])) {
+        echo "Returned values :\n";
+
+        if (!empty($documentation['return']['type'])) {
+            echo "\tType : " . $documentation['return']['type'] . "\n";
+        }
+
+        if (!empty($documentation['return']['values'])) {
+            echo "\tOther values : " . implode(', ', $documentation['return']['values']) . "\n";
+        }
+    }
+
+    echo "\n";
+
+    if (!empty($documentation['examples'])) {
+        echo "See examples ? Y/n\n";
+
+        $choice = ask();
+
+        if ($choice === '' || $choice === 'Y') {
+            echo "Examples\n";
+
+            foreach ($documentation['examples'] as $example) {
+                echo "\t" . $example['title'] ."\n";
+
+                $content = formatText($example['content'], "\t\t");
+                echo $content . "\n\n";
+            }
+
+            ask();
+        }
+    } else {
+        ask();
+    }
+}
+
+function searchDocEntries($functions, $documentation)
+{
+    while (true) {
+        echo "Enter a function name : ";
+
+        $search = ask();
+
+        if ($search !== '') {
+            $similars = array_reduce($functions, function ($acc, $function) use ($search) {
+                if (strlen($search) < strlen($function)) {
+                    $diff = levenshtein($search, substr($function, 0, strlen($search)));
+                    $diff = $diff + sqrt(strlen($function) - strlen($search));
+                } else {
+                    $diff = levenshtein($search, $function);
+                    $diff = $diff + sqrt(strlen($search) - strlen($function));
+                }
+
+                $acc[$function] = $diff;
+                return $acc;
+            });
+
+            asort($similars);
+            $similars = array_slice($similars, 0, 10);
+
+            $first = key($similars);
+
+            if ($similars[$first] == 0) {
+                return $first;
+            } else {
+                echo "Found approching names :\n";
+
+                foreach (array_keys($similars) as $name) {
+                    echo "\t$name\n";
+
+                    if (!empty($documentation[$name]['short'])) {
+                        echo formatText($documentation[$name]['short'], "\t\t") . "\n";
+                    }
+                }
+
+                echo "\n";
+            }
+        }
+    }
+}
+
+function parseParameters(array $parameters)
+{
+    $parameters = array_reduce($parameters, function($parameters, $parameter) {
+        $isOpt = false;
+
+        if (strpos($parameter, '--') === 0) {
+            $isOpt = true;
+            $parameter = substr($parameter, 2);
+        } elseif (strpos($parameter, '-') === 0) {
+            $isOpt = true;
+            $parameter = substr($parameter, 1);
+        }
+
+        if ($isOpt) {
+            $equalPos = strpos($parameter, '=');
+
+            if ($equalPos > 0) {
+                $option = substr($parameter, 0, $equalPos);
+                $value = substr($parameter, $equalPos + 1);
+                $parameters['options'][$option] = $value;
+            } else {
+                $parameters['options'][$parameter] = null;
+            }
+        } else {
+            $parameters['arguments'][] = $parameter;
+        }
+
+        return $parameters;
+    }, ['arguments' => [], 'options' => []]);
+
+    return $parameters;
+}
+
+function promptHelp()
+{
+    echo "Search functions documentation\n";
+    ask();
+    system('clear');
+}
+
+function formatText($text, $indentation = '', $lineLength = 80)
+{
+    $text = explode("\n", $text);
+
+    $text = array_map(function($line) use ($indentation, $lineLength) {
+        if (strlen($line) < $lineLength) {
+            return $indentation . $line;
+        }
+
+        $lines = '';
+
+        while (strlen($line) > $lineLength) {
+            $nextSpacePos = strpos($line, ' ', $lineLength);
+            $lines .= "\n" . $indentation . substr($line, 0, $nextSpacePos);
+            $line = substr($line, $nextSpacePos + 1);
+        }
+
+        if (!empty($line)) {
+            $lines .= "\n" . $indentation . $line;
+        }
+
+        return $lines;
+    }, $text);
+
+    $text = implode("\n", $text);
+
+    if (strpos($text, "\n") === 0) {
+        $text = substr($text, 1);
+    }
+
+    return $text;
+}
+
+function ask()
+{
+    while (true) {
+        $entry = trim(fgets(STDIN));
+
+        if ($entry === ':q') {
+            quit();
+        }
+
+        return $entry;
+    }
+}
+
+function quit()
+{
+    system('clear');
+    exit(0);
+}

@@ -1,0 +1,24 @@
+{
+    "name":         "mkcg/php_shelldoc",
+    "description":  "Display documentation of common PHP functions in shell",
+    "keywords":     ["php", "documentation", "shell"],
+    "type":         "library",
+    "license":      "MIT",
+
+    "authors": [
+        {
+            "name":      "Kévin Masseix",
+            "email":     "masseix.kevin@gmail.com"
+        }
+    ],
+
+    "require": {
+        "php": ">=7.0"
+    },
+
+    "autoload": {
+        "psr-4": {
+            "MKCG\\Shelldoc\\": "src/"
+        }
+    }
+}
